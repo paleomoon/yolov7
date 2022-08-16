@@ -26,7 +26,7 @@ from utils.torch_utils import select_device
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', type=str, default='./yolov5s.pt', help='weights path')
-    parser.add_argument('--img-size', nargs='+', type=int, default=[640, 640], help='image size')  # height, width
+    parser.add_argument('--img-size', nargs='+', type=int, default=[768, 1280], help='image size')  # height, width
     parser.add_argument('--batch-size', type=int, default=1, help='batch size')
     parser.add_argument('--grid', action='store_true', help='export Detect() layer grid')
     parser.add_argument('--device', default='cpu', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
@@ -82,17 +82,17 @@ if __name__ == '__main__':
 
     print(f"\n{colorstr('PyTorch:')} starting from {opt.weights} ({file_size(opt.weights):.1f} MB)")
 
-    # TorchScript export -----------------------------------------------------------------------------------------------
-    prefix = colorstr('TorchScript:')
-    try:
-        print(f'\n{prefix} starting export with torch {torch.__version__}...')
-        f = opt.weights.replace('.pt', '.torchscript.pt')  # filename
-        ts = torch.jit.trace(model, img, strict=False)
-        ts = optimize_for_mobile(ts)  # https://pytorch.org/tutorials/recipes/script_optimized.html
-        ts.save(f)
-        print(f'{prefix} export success, saved as {f} ({file_size(f):.1f} MB)')
-    except Exception as e:
-        print(f'{prefix} export failure: {e}')
+    # # TorchScript export -----------------------------------------------------------------------------------------------
+    # prefix = colorstr('TorchScript:')
+    # try:
+    #     print(f'\n{prefix} starting export with torch {torch.__version__}...')
+    #     f = opt.weights.replace('.pt', '.torchscript.pt')  # filename
+    #     ts = torch.jit.trace(model, img, strict=False)
+    #     ts = optimize_for_mobile(ts)  # https://pytorch.org/tutorials/recipes/script_optimized.html
+    #     ts.save(f)
+    #     print(f'{prefix} export success, saved as {f} ({file_size(f):.1f} MB)')
+    # except Exception as e:
+    #     print(f'{prefix} export failure: {e}')
 
     # ONNX export ------------------------------------------------------------------------------------------------------
     prefix = colorstr('ONNX:')
@@ -134,19 +134,19 @@ if __name__ == '__main__':
     except Exception as e:
         print(f'{prefix} export failure: {e}')
 
-    # CoreML export ----------------------------------------------------------------------------------------------------
-    prefix = colorstr('CoreML:')
-    try:
-        import coremltools as ct
+    # # CoreML export ----------------------------------------------------------------------------------------------------
+    # prefix = colorstr('CoreML:')
+    # try:
+    #     import coremltools as ct
 
-        print(f'{prefix} starting export with coremltools {ct.__version__}...')
-        # convert model from torchscript and apply pixel scaling as per detect.py
-        model = ct.convert(ts, inputs=[ct.ImageType(name='image', shape=img.shape, scale=1 / 255.0, bias=[0, 0, 0])])
-        f = opt.weights.replace('.pt', '.mlmodel')  # filename
-        model.save(f)
-        print(f'{prefix} export success, saved as {f} ({file_size(f):.1f} MB)')
-    except Exception as e:
-        print(f'{prefix} export failure: {e}')
+    #     print(f'{prefix} starting export with coremltools {ct.__version__}...')
+    #     # convert model from torchscript and apply pixel scaling as per detect.py
+    #     model = ct.convert(ts, inputs=[ct.ImageType(name='image', shape=img.shape, scale=1 / 255.0, bias=[0, 0, 0])])
+    #     f = opt.weights.replace('.pt', '.mlmodel')  # filename
+    #     model.save(f)
+    #     print(f'{prefix} export success, saved as {f} ({file_size(f):.1f} MB)')
+    # except Exception as e:
+    #     print(f'{prefix} export failure: {e}')
 
     # Finish
     print(f'\nExport complete ({time.time() - t:.2f}s). Visualize with https://github.com/lutzroeder/netron.')

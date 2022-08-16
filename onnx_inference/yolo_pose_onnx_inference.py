@@ -9,6 +9,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--model-path", type=str, default="./yolov5s6_pose_640_ti_lite_54p9_82p2.onnx")
 parser.add_argument("--img-path", type=str, default="./sample_ips.txt")
 parser.add_argument("--dst-path", type=str, default="./sample_ops_onnxrt")
+parser.add_argument('--img-size', nargs='+', type=int, default=[768, 1280], help='image size')  # height, width
 args = parser.parse_args()
 
 
@@ -39,7 +40,7 @@ radius = 5
 
 def read_img(img_file, img_mean=127.5, img_scale=1/127.5):
     img = cv2.imread(img_file)[:, :, ::-1]
-    img = cv2.resize(img, (640,640), interpolation=cv2.INTER_LINEAR)
+    img = cv2.resize(img, (args.img_size[1], args.img_size[0]), interpolation=cv2.INTER_LINEAR)
     img = (img - img_mean) * img_scale
     img = np.asarray(img, dtype=np.float32)
     img = np.expand_dims(img,0)
@@ -57,7 +58,8 @@ def model_inference(model_path=None, input=None):
 
 def model_inference_image_list(model_path, img_path=None, mean=None, scale=None, dst_path=None):
     os.makedirs(args.dst_path, exist_ok=True)
-    img_file_list = list(open(img_path))
+    # img_file_list = list(open(img_path))
+    img_file_list = [img_path] #list(open(img_path))
     pbar = enumerate(img_file_list)
     max_index = 20
     pbar = tqdm(pbar, total=min(len(img_file_list), max_index))
@@ -76,6 +78,7 @@ def post_process(img_file, dst_file, output, score_threshold=0.3):
     """
     det_bboxes, det_scores, det_labels, kpts = output[:, 0:4], output[:, 4], output[:, 5], output[:, 6:]
     img = cv2.imread(img_file)
+    img = cv2.resize(img, (args.img_size[1], args.img_size[0]), interpolation=cv2.INTER_LINEAR)
     #To generate color based on det_label, to look into the codebase of Tensorflow object detection api.
     dst_txt_file = dst_file.replace('png', 'txt')
     f = open(dst_txt_file, 'wt')
@@ -86,11 +89,11 @@ def post_process(img_file, dst_file, output, score_threshold=0.3):
             f.write("{:8.0f} {:8.5f} {:8.5f} {:8.5f} {:8.5f} {:8.5f}\n".format(det_labels[idx], det_scores[idx], det_bbox[1], det_bbox[0], det_bbox[3], det_bbox[2]))
         if det_scores[idx]>score_threshold:
             color_map = _CLASS_COLOR_MAP[int(det_labels[idx])]
-            img = cv2.rectangle(img, (det_bbox[0], det_bbox[1]), (det_bbox[2], det_bbox[3]), color_map[::-1], 2)
+            img = cv2.rectangle(img, (int(det_bbox[0]), int(det_bbox[1])), (int(det_bbox[2]), int(det_bbox[3])), color_map[::-1], 2)
             cv2.putText(img, "id:{}".format(int(det_labels[idx])), (int(det_bbox[0]+5),int(det_bbox[1])+15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color_map[::-1], 2)
             cv2.putText(img, "score:{:2.1f}".format(det_scores[idx]), (int(det_bbox[0] + 5), int(det_bbox[1]) + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color_map[::-1], 2)
             plot_skeleton_kpts(img, kpt)
-    cv2.imwrite(dst_file, img)
+    cv2.imwrite("result.jpg", img)
     f.close()
 
 
