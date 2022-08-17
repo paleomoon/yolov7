@@ -253,7 +253,7 @@ class IKeypoint(nn.Module):
     def forward(self, x):
         # x = x.copy()  # for profiling
         z = []  # inference output
-        self.training |= self.export
+        # self.training |= self.export
         for i in range(self.nl):
             if self.nkpt is None or self.nkpt==0:
                 x[i] = self.im[i](self.m[i](self.ia[i](x[i])))  # conv
@@ -305,7 +305,7 @@ class IKeypoint(nn.Module):
 
                 z.append(y.view(bs, -1, self.no))
 
-        return x if self.training else (torch.cat(z, 1), x)
+        return x if self.training else (torch.cat(z, 1), x) if not self.export else torch.cat(z, 1)
 
     @staticmethod
     def _make_grid(nx=20, ny=20):

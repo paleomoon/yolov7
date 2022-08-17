@@ -590,10 +590,16 @@ def non_max_suppression_export(prediction, conf_thres=0.25, iou_thres=0.45, clas
         nc = prediction.shape[2] - 5  if not kpt_label else prediction.shape[2] - 56 # number of classes
 
     min_wh, max_wh = 2, 4096  # (pixels) minimum and maximum box width and height
-    xc = prediction[..., 4] > conf_thres  # candidates
+    #print(prediction.shape) # (1, 61200, 57)
+    xc = prediction[..., 4] > conf_thres  # candidates (1, 61200)
+    #print(xc.shape)
     output = [torch.zeros((0, 57), device=prediction.device)] * prediction.shape[0]
-    for xi, x in enumerate(prediction):  # image index, image inference
-        x = x[xc[xi]]  # confidence
+    for xi, xe in enumerate(prediction):  # image index, image inference
+        #x = x[xc[xi]]  # confidence
+        xci = xc[xi] # 61200 boolean, xi=0
+        #print(xci.shape)
+        x = xe[xci] # (n,57), xe (61200,57)
+        #print(x.shape)
         # Compute conf
         cx, cy, w, h = x[:,0:1], x[:,1:2], x[:,2:3], x[:,3:4]
         obj_conf = x[:, 4:5]

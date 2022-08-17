@@ -102,11 +102,11 @@ if __name__ == '__main__':
         print(f'{prefix} starting export with onnx {onnx.__version__}...')
         f = opt.weights.replace('.pt', '.onnx')  # filename
         if opt.export_nms:
-            torch.onnx.export(model_nms, img, f, verbose=False, opset_version=11, input_names=['images'], output_names=output_names,
+            torch.onnx.export(model_nms, img, f, verbose=False, opset_version=13, input_names=['images'], output_names=output_names,
                               dynamic_axes={'images': {0: 'batch', 2: 'height', 3: 'width'},  # size(1,3,640,640)
                                             'output': {0: 'batch', 2: 'y', 3: 'x'}} if opt.dynamic else None)
         else:
-            torch.onnx.export(model, img, f, verbose=False, opset_version=11, input_names=['images'], output_names=output_names,
+            torch.onnx.export(model, img, f, verbose=False, opset_version=13, input_names=['images'], output_names=output_names,
                               dynamic_axes={'images': {0: 'batch', 2: 'height', 3: 'width'},  # size(1,3,640,640)
                                             'output': {0: 'batch', 2: 'y', 3: 'x'}} if opt.dynamic else None)
 
