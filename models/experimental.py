@@ -220,8 +220,8 @@ class End2End(nn.Module):
         device = device if device else torch.device('cpu')
         assert isinstance(max_wh,(int)) or max_wh is None
         self.model = model.to(device)
-        self.model.model[-1].end2end = True
-        self.patch_model = ONNX_TRT if max_wh is None else ONNX_ORT
+        self.model.model[-1].end2end = True # Detect layer concat heads to one
+        self.patch_model = ONNX_TRT if max_wh is None else ONNX_ORT # max_wh is None: ONNX_TRT, because EfficientNMS_TRT is non-agnostic
         self.end2end = self.patch_model(max_obj, iou_thres, score_thres, max_wh, device)
         self.end2end.eval()
 

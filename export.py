@@ -132,6 +132,7 @@ if __name__ == '__main__':
                     0: 'batch',
                 }, }
             if opt.end2end and opt.max_wh is None:
+                # TRT end2end output
                 output_axes = {
                     'num_dets': {0: 'batch'},
                     'det_boxes': {0: 'batch'},
@@ -146,9 +147,9 @@ if __name__ == '__main__':
         if opt.grid:
             if opt.end2end:
                 print('\nStarting export end2end onnx model for %s...' % 'TensorRT' if opt.max_wh is None else 'onnxruntime')
-                model = End2End(model,opt.topk_all,opt.iou_thres,opt.conf_thres,opt.max_wh,device)
+                model = End2End(model,opt.topk_all,opt.iou_thres,opt.conf_thres,opt.max_wh,device) # model with Detect layer + NMS
                 if opt.end2end and opt.max_wh is None:
-                    output_names = ['num_dets', 'det_boxes', 'det_scores', 'det_classes']
+                    output_names = ['num_dets', 'det_boxes', 'det_scores', 'det_classes'] # TRT output of End2End
                     shapes = [opt.batch_size, 1, opt.batch_size, opt.topk_all, 4,
                               opt.batch_size, opt.topk_all, opt.batch_size, opt.topk_all]
                 else:
@@ -156,6 +157,7 @@ if __name__ == '__main__':
             else:
                 model.model[-1].concat = True
 
+        # export model above
         torch.onnx.export(model, img, f, verbose=False, opset_version=12, input_names=['images'],
                           output_names=output_names,
                           dynamic_axes=dynamic_axes)
@@ -164,6 +166,7 @@ if __name__ == '__main__':
         onnx_model = onnx.load(f)  # load onnx model
         onnx.checker.check_model(onnx_model)  # check onnx model
 
+        # set output dim
         if opt.end2end and opt.max_wh is None:
             for i in onnx_model.graph.output:
                 for j in i.type.tensor_type.shape.dim:
