@@ -16,6 +16,8 @@ from utils.general import set_logging, check_img_size
 from utils.torch_utils import select_device
 from utils.add_nms import RegisterNMS
 
+# python export.py --weights ./yolov7.pt --grid --end2end --simplify --topk-all 100 --iou-thres 0.65 --conf-thres 0.35 --img-size 640 640 --dynamic-batch
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', type=str, default='./yolor-csp-c.pt', help='weights path')

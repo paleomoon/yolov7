@@ -109,7 +109,7 @@ class ORT_NMS(torch.autograd.Function):
 
 
 class TRT_NMS(torch.autograd.Function):
-    '''TensorRT NMS operation'''
+    '''TensorRT NMS operation, mapping TRT_NMS to TRT::EfficientNMS_TRT in onnx'''
     @staticmethod
     def forward(
         ctx,
@@ -206,6 +206,7 @@ class ONNX_TRT(nn.Module):
         conf = x[:, :, 4:5]
         scores = x[:, :, 5:]
         scores *= conf
+        # call TRT_NMS forward, mock random output
         num_det, det_boxes, det_scores, det_classes = TRT_NMS.apply(boxes, scores, self.background_class, self.box_coding,
                                                                     self.iou_threshold, self.max_obj,
                                                                     self.plugin_version, self.score_activation,
