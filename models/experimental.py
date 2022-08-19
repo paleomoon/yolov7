@@ -88,11 +88,12 @@ class ORT_NMS(torch.autograd.Function):
     '''ONNX-Runtime NMS operation'''
     @staticmethod
     def forward(ctx,
-                boxes,
-                scores,
+                boxes, # (b,25200,4)
+                scores, # (b,num_cls,25200), num_cls=1
                 max_output_boxes_per_class=torch.tensor([100]),
                 iou_threshold=torch.tensor([0.45]),
                 score_threshold=torch.tensor([0.25])):
+        '''Just mock output for forward() run in pytorch'''
         device = boxes.device
         batch = scores.shape[0]
         num_det = random.randint(0, 100)
@@ -170,17 +171,17 @@ class ONNX_ORT(nn.Module):
                                            device=self.device)
 
     def forward(self, x):
-        boxes = x[:, :, :4]
+        boxes = x[:, :, :4] # (b,25200,4)
         conf = x[:, :, 4:5]
-        scores = x[:, :, 5:]
+        scores = x[:, :, 5:] # (b,25200,80)
         scores *= conf
-        boxes @= self.convert_matrix
-        max_score, category_id = scores.max(2, keepdim=True)
+        boxes @= self.convert_matrix # [x_center, y_center, width, height] to [x1, y1, x2, y2], which is default in onnx NonMaxSuppression op
+        max_score, category_id = scores.max(2, keepdim=True) # (b,25200,1) (b,25200,1)
         dis = category_id.float() * self.max_wh
         nmsbox = boxes + dis
-        max_score_tp = max_score.transpose(1, 2).contiguous()
-        selected_indices = ORT_NMS.apply(nmsbox, max_score_tp, self.max_obj, self.iou_threshold, self.score_threshold)
-        X, Y = selected_indices[:, 0], selected_indices[:, 2]
+        max_score_tp = max_score.transpose(1, 2).contiguous() # (b,1,25200),single label, best class only
+        selected_indices = ORT_NMS.apply(nmsbox, max_score_tp, self.max_obj, self.iou_threshold, self.score_threshold) # [num_selected_indices, 3]
+        X, Y = selected_indices[:, 0], selected_indices[:, 2] # 0-batch_index, 2-box_index,(1-class_index always 0)
         selected_boxes = boxes[X, Y, :]
         selected_categories = category_id[X, Y, :].float()
         selected_scores = max_score[X, Y, :]
