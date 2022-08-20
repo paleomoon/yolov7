@@ -1,6 +1,7 @@
 # This file contains experimental modules
 
 import numpy as np
+import random
 import torch
 import torch.nn as nn
 
@@ -134,3 +135,85 @@ def attempt_load(weights, map_location=None, inplace=True):
         for k in ['names', 'stride']:
             setattr(model, k, getattr(model[-1], k))
         return model  # return ensemble
+
+class NMS_OP(torch.autograd.Function):
+    '''NMS operation'''
+    @staticmethod
+    def symbolic(g,
+                 boxes, # [batch_size, spatial_dimension, 4]
+                 scores, # [batch_size, num_classes, spatial_dimension]
+                 iou_threshold=torch.tensor([0.45]),
+                 score_threshold=torch.tensor([0.25]),
+                 max_output_boxes_per_class =torch.tensor([100]),
+                 center_point_box =1, # [cent_x, cent_y, w, h]
+                 ):
+        selected_indices = g.op("TRT::EfficientNMS_ONNX_TRT",
+                    boxes,
+                    scores,
+                    iou_threshold_f=iou_threshold,
+                    score_threshold_f=score_threshold,
+                    max_output_boxes_per_class_i=max_output_boxes_per_class ,
+                    center_point_box_i=center_point_box)
+
+        return selected_indices # [num_selected_indices, 3], the selected index format is [batch_index, class_index, box_index].
+
+    @staticmethod
+    def forawrd(ctx,
+                boxes,
+                scores,
+                iou_threshold=0.45,
+                score_threshold=0.25,
+                box_coding=1, # [x, y, w, h]
+                max_output_boxes_per_class =100,
+                center_point_box=1):
+
+        device = boxes.device
+        batch = scores.shape[0]
+
+        num_det = random.randint(0, 100)
+        batches = torch.randint(0, batch, (num_det,)).sort()[0].to(device)
+        idxs = torch.arange(100, 100 + num_det).to(device)
+        zeros = torch.zeros((num_det,), dtype=torch.int64).to(device)
+        selected_indices = torch.cat([batches[None], zeros[None], idxs[None]], 0).T.contiguous()
+        selected_indices = selected_indices.to(torch.int64)
+        return selected_indices
+
+class TRT_NMS_MODULE(nn.Module):
+    '''onnx module with TensorRT NMS operation.'''
+    def __init__(self, max_obj=100, iou_thres=0.45, score_thres=0.25, device=None):
+        super().__init__()
+        self.device = device if device else torch.device('cpu')
+        self.iou_threshold = iou_thres
+        self.score_threshold = score_thres
+        self.box_coding = 1
+        self.max_output_boxes = max_obj
+        self.background_class = -1
+        self.score_activation = False
+
+    def forward(self, x):
+        boxes = x[:, :, :4]
+        conf = x[:, :, 4:5]
+        scores = x[:, :, 5:6]
+        keypoints = x[:, :, 6:]
+        num_det, det_boxes, det_scores, det_classes = TRT_NMS_OP.apply(boxes, scores, self.iou_threshold, self.score_threshold,
+                                                                    self.box_coding, self.max_output_boxes,
+                                                                    self.background_class, self.score_activation)
+        return num_det, det_boxes, det_scores, det_classes
+
+class TRT_End2End(nn.Module):
+    '''export onnx or tensorrt model with NMS operation.'''
+    def __init__(self, ori_model,  max_obj=100, iou_thres=0.45, score_thres=0.25, device=None):
+        super().__init__()
+        self.device = device if device else torch.device('cpu')
+        self.ori_model = ori_model.to(device)
+        self.ori_model.model[-1].export = True # Detect layer concat heads to one
+        self.nms_model = TRT_NMS_MODULE
+        self.nms = self.nms_model(max_obj, iou_thres, score_thres, device)
+        self.nms.eval()
+
+    def forward(self, x):
+        x = self.ori_model(x);
+        x = self.nms(x)
+        return x
+
+

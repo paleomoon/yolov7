@@ -18,7 +18,7 @@ import cv2
 import numpy as np
 
 import models
-from models.experimental import attempt_load
+from models.experimental import attempt_load, End2End
 from utils.activations import Hardswish, SiLU
 from utils.general import colorstr, check_img_size, check_requirements, file_size, set_logging
 from utils.torch_utils import select_device
@@ -33,6 +33,11 @@ if __name__ == '__main__':
     parser.add_argument('--dynamic', action='store_true', help='dynamic ONNX axes')  # ONNX-only
     parser.add_argument('--simplify', action='store_true', help='simplify ONNX model')  # ONNX-only
     parser.add_argument('--export-nms', action='store_true', help='export the nms part in ONNX model')  # ONNX-only, #opt.grid has to be set True for nms export to work
+    parser.add_argument('--trt-end2end', action='store_true', help='export onnx model for end2end tensorrt')
+    parser.add_argument('--topk_all', type=int, default=100, help='topk objects for every images')
+    parser.add_argument('--iou-thres', type=float, default=0.45, help='iou threshold for NMS')
+    parser.add_argument('--conf-thres', type=float, default=0.25, help='conf threshold for NMS')
+    parser.add_argument('--device', default='cpu', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     opt = parser.parse_args()
     opt.img_size *= 2 if len(opt.img_size) == 1 else 1  # expand
     print(opt)
@@ -80,6 +85,18 @@ if __name__ == '__main__':
         model_nms.eval()
         output_names = ['detections']
 
+    if opt.trt_end2end:
+        dynamic_axes = {
+                'images': {0: 'batch'}, 
+                'num_dets': {0: 'batch'},
+                'det_boxes': {0: 'batch'},
+                'det_scores': {0: 'batch'},
+                'det_classes': {0: 'batch'}}
+        output_names = ['num_dets', 'det_boxes', 'det_scores', 'det_classes'] # TRT output of End2End
+        output_shapes = [opt.batch_size, 1, opt.batch_size, opt.topk_all, 4,
+            opt.batch_size, opt.topk_all, opt.batch_size, opt.topk_all]
+        model = End2End(model,opt.topk_all,opt.iou_thres,opt.conf_thres,device) # model with Detect layer + NMS
+
     print(f"\n{colorstr('PyTorch:')} starting from {opt.weights} ({file_size(opt.weights):.1f} MB)")
 
     # # TorchScript export -----------------------------------------------------------------------------------------------
@@ -106,15 +123,31 @@ if __name__ == '__main__':
                               dynamic_axes={'images': {0: 'batch', 2: 'height', 3: 'width'},  # size(1,3,640,640)
                                             'output': {0: 'batch', 2: 'y', 3: 'x'}} if opt.dynamic else None)
         else:
+            # torch.onnx.export(model, img, f, verbose=False, opset_version=13, input_names=['images'], output_names=output_names,
+            #                   dynamic_axes={'images': {0: 'batch', 2: 'height', 3: 'width'},  # size(1,3,640,640)
+            #                                 'output': {0: 'batch', 2: 'y', 3: 'x'}} if opt.dynamic else None)
             torch.onnx.export(model, img, f, verbose=False, opset_version=13, input_names=['images'], output_names=output_names,
-                              dynamic_axes={'images': {0: 'batch', 2: 'height', 3: 'width'},  # size(1,3,640,640)
-                                            'output': {0: 'batch', 2: 'y', 3: 'x'}} if opt.dynamic else None)
+                    dynamic_axes=dynamic_axes)
 
 
         # Checks
         model_onnx = onnx.load(f)  # load onnx model
         onnx.checker.check_model(model_onnx)  # check onnx model
-        # print(onnx.helper.printable_graph(model_onnx.graph))  # print
+
+        # set output dim
+        if opt.end2end and opt.max_wh is None:
+            for i in model_onnx.graph.output:
+                for j in i.type.tensor_type.shape.dim:
+                    j.dim_param = str(output_shapes.pop(0))
+
+        print(onnx.helper.printable_graph(model_onnx.graph))  # print
+
+        # # Metadata
+        # d = {'stride': int(max(model.stride))}
+        # for k, v in d.items():
+        #     meta = onnx_model.metadata_props.add()
+        #     meta.key, meta.value = k, str(v)
+        # onnx.save(onnx_model, f)
 
         # Simplify
         if opt.simplify:
