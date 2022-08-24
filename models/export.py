@@ -23,21 +23,23 @@ from utils.activations import Hardswish, SiLU
 from utils.general import colorstr, check_img_size, check_requirements, file_size, set_logging
 from utils.torch_utils import select_device
 
+# python models/export.py --weights yolov7-w6-pose.pt --img-size 768 1280 --simplify --end2end --max-wh 7680 --conf-thres 0
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--weights', type=str, default='./yolov5s.pt', help='weights path')
+    parser.add_argument('--weights', type=str, default='./yolov7-w6-pose.pt', help='weights path')
     parser.add_argument('--img-size', nargs='+', type=int, default=[768, 1280], help='image size')  # height, width
     parser.add_argument('--batch-size', type=int, default=1, help='batch size')
-    parser.add_argument('--grid', action='store_true', help='export Detect() layer grid')
+    # parser.add_argument('--grid', action='store_true', help='export Detect() layer grid') # no effects
     parser.add_argument('--device', default='cpu', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--dynamic', action='store_true', help='dynamic ONNX axes')  # ONNX-only
     parser.add_argument('--simplify', action='store_true', help='simplify ONNX model')  # ONNX-only
     parser.add_argument('--export-nms', action='store_true', help='export the nms part in ONNX model')  # ONNX-only, #opt.grid has to be set True for nms export to work
-    parser.add_argument('--trt-end2end', action='store_true', help='export onnx model for end2end tensorrt')
+    parser.add_argument('--end2end', action='store_true', help='export onnx model AND for tensorrt end2end')
+    parser.add_argument('--max-wh', type=int, default=7680, help='None for tensorrt nms, int value for onnx-runtime nms')
     parser.add_argument('--topk_all', type=int, default=100, help='topk objects for every images')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='iou threshold for NMS')
     parser.add_argument('--conf-thres', type=float, default=0.25, help='conf threshold for NMS')
-    parser.add_argument('--device', default='cpu', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     opt = parser.parse_args()
     opt.img_size *= 2 if len(opt.img_size) == 1 else 1  # expand
     print(opt)
@@ -71,7 +73,7 @@ if __name__ == '__main__':
                 m.act = SiLU()
         # elif isinstance(m, models.yolo.Detect):
         #     m.forward = m.forward_export  # assign forward (optional)
-    model.model[-1].export = not (opt.grid or opt.export_nms) # set Detect() layer grid export
+    # model.model[-1].export = not (opt.grid or opt.export_nms) # set Detect() layer grid export
     for _ in range(2):
         y = model(img)  # dry runs
     output_names = None
@@ -85,18 +87,15 @@ if __name__ == '__main__':
         model_nms.eval()
         output_names = ['detections']
 
-    if opt.trt_end2end:
+    if opt.end2end:
         dynamic_axes = {
-                'images': {0: 'batch'}, 
-                'num_dets': {0: 'batch'},
-                'det_boxes': {0: 'batch'},
-                'det_scores': {0: 'batch'},
-                'det_classes': {0: 'batch'}}
-        output_names = ['num_dets', 'det_boxes', 'det_scores', 'det_classes'] # TRT output of End2End
-        output_shapes = [opt.batch_size, 1, opt.batch_size, opt.topk_all, 4,
-            opt.batch_size, opt.topk_all, opt.batch_size, opt.topk_all]
-        model = End2End(model,opt.topk_all,opt.iou_thres,opt.conf_thres,device) # model with Detect layer + NMS
+                'images': {0: 'batch'},
+                'output': {0: 'batch'}
+        }
+        output_names = ['output']
+        model = End2End(model,opt.topk_all,opt.iou_thres,opt.conf_thres,opt.max_wh,device) # model with Detect layer + NMS
 
+    y = model(img)  # dry runs
     print(f"\n{colorstr('PyTorch:')} starting from {opt.weights} ({file_size(opt.weights):.1f} MB)")
 
     # # TorchScript export -----------------------------------------------------------------------------------------------
@@ -117,7 +116,7 @@ if __name__ == '__main__':
         import onnx
 
         print(f'{prefix} starting export with onnx {onnx.__version__}...')
-        f = opt.weights.replace('.pt', '.onnx')  # filename
+        f = opt.weights.replace('.pt', '-nms.onnx')  # filename
         if opt.export_nms:
             torch.onnx.export(model_nms, img, f, verbose=False, opset_version=13, input_names=['images'], output_names=output_names,
                               dynamic_axes={'images': {0: 'batch', 2: 'height', 3: 'width'},  # size(1,3,640,640)
